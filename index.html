@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Magic Particles Pro</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: radial-gradient(circle, #220033 0%, #000000 100%); font-family: 'Segoe UI', sans-serif; }
+        #ui-info {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(255, 255, 255, 0.15); color: white; padding: 20px;
+            border-radius: 15px; font-size: 14px; pointer-events: none;
+            border: 2px solid #ff00ff; backdrop-filter: blur(15px); z-index: 100;
+            box-shadow: 0 0 20px rgba(255, 0, 255, 0.5);
+        }
+        #webcam { 
+            position: absolute; bottom: 20px; right: 20px; 
+            width: 140px; border-radius: 12px; transform: scaleX(-1);
+            border: 2px solid #00fbff; z-index: 100; box-shadow: 0 0 15px #00fbff;
+        }
+        .status { color: #ff00ff; font-weight: bold; text-shadow: 0 0 10px #ff00ff; }
+    </style>
+</head>
+<body>
+
+    <div id="ui-info">
+        <b style="font-size: 20px; color: #00fbff; text-shadow: 0 0 10px #00fbff;">ULTRA NEON PARTICLES</b><br><br>
+        🖐️ Buka Tangan: <span class="status">Ledakan Cahaya</span><br>
+        🖕 Jari Tengah: <span class="status">BENTUK HATI</span><br>
+        ✌️ Dua Jari: <span class="status">TEXT "I LOVE U"</span><br>
+        🔄 Gerak Kiri/Kanan: <span class="status">Putar Partikel</span>
+    </div>
+
+    <video id="webcam" autoplay playsinline></video>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        let scene, camera, renderer, particles, material;
+        let particleCount = 20000; 
+        let currentShape = 'sphere';
+        let handOpenness = 0, targetRotationY = 0, lastHandX = 0.5;
+        const videoElement = document.getElementById('webcam');
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 8;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+
+            createParticles();
+            setupHandTracking();
+            animate();
+        }
+
+        function createParticles() {
+            const geometry = new THREE.BufferGeometry();
+            const posArray = new Float32Array(particleCount * 3);
+            const sphereTarget = new Float32Array(particleCount * 3);
+            const heartTarget = new Float32Array(particleCount * 3);
+            const textTarget = new Float32Array(particleCount * 3);
+
+            for (let i = 0; i < particleCount; i++) {
+                // 1. SPHERE
+                const phi = Math.acos(-1 + (2 * i) / particleCount);
+                const theta = Math.sqrt(particleCount * Math.PI) * phi;
+                sphereTarget[i*3] = 3 * Math.cos(theta) * Math.sin(phi);
+                sphereTarget[i*3+1] = 3 * Math.sin(theta) * Math.sin(phi);
+                sphereTarget[i*3+2] = 3 * Math.cos(phi);
+
+                // 2. HEART (Dipicu 🖕)
+                const t = Math.random() * Math.PI * 2;
+                const hx = 16 * Math.pow(Math.sin(t), 3);
+                const hy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                heartTarget[i*3] = hx * 0.22;
+                heartTarget[i*3+1] = hy * 0.22;
+                heartTarget[i*3+2] = (Math.random() - 0.5) * 2;
+
+                // 3. TEXT "I LOVE U" (✌️)
+                const charIndex = i % 6;
+                let tx = 0, ty = (Math.random()-0.5)*4;
+                if(charIndex === 0) { tx = -5; } // I
+                else if(charIndex === 1) { tx = -2.5; if(Math.random()>0.5) ty = -1.5; } // L
+                else if(charIndex === 2) { const a=Math.random()*Math.PI*2; tx=0+Math.cos(a)*1.2; ty=Math.sin(a)*1.5; } // O
+                else if(charIndex === 3) { tx=2.5+(Math.random()-0.5); ty=Math.abs(tx-2.5)*3-1.5; } // V
+                else if(charIndex === 4) { tx=5; if(Math.random()>0.3) { tx=5+Math.random(); ty=(Math.random()>0.5?1:(Math.random()>0.5?0:-1)); } } // E
+                else if(charIndex === 5) { const a=Math.random()*Math.PI; tx=7.5+Math.cos(a+Math.PI); ty=Math.sin(a+Math.PI)*2+1; } // U
+
+                textTarget[i*3] = tx * 0.7;
+                textTarget[i*3+1] = ty * 0.7;
+                textTarget[i*3+2] = (Math.random() - 0.5) * 1;
+
+                posArray[i*3] = sphereTarget[i*3];
+                posArray[i*3+1] = sphereTarget[i*3+1];
+                posArray[i*3+2] = sphereTarget[i*3+2];
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            geometry.setAttribute('targetSphere', new THREE.BufferAttribute(sphereTarget, 3));
+            geometry.setAttribute('targetHeart', new THREE.BufferAttribute(heartTarget, 3));
+            geometry.setAttribute('targetText', new THREE.BufferAttribute(textTarget, 3));
+
+            // Tekstur Partikel Glowing
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(64,64,0,64,64,64);
+            grad.addColorStop(0, 'white');
+            grad.addColorStop(0.2, '#00ffff');
+            grad.addColorStop(0.5, '#ff00ff');
+            grad.addColorStop(1, 'black');
+            ctx.fillStyle = grad; ctx.fillRect(0,0,128,128);
+            const texture = new THREE.CanvasTexture(canvas);
+
+            material = new THREE.ShaderMaterial({
+                uniforms: { 
+                    uExpand: { value: 0 }, 
+                    uShapeType: { value: 0 }, 
+                    uTexture: { value: texture },
+                    uTime: { value: 0 }
+                },
+                vertexShader: `
+                    uniform float uExpand; uniform float uShapeType; uniform float uTime;
+                    attribute vec3 targetSphere; attribute vec3 targetHeart; attribute vec3 targetText;
+                    void main() {
+                        vec3 target;
+                        if(uShapeType < 0.5) target = targetSphere;
+                        else if(uShapeType < 1.5) target = targetHeart;
+                        else target = targetText;
+                        
+                        // Animasi getaran halus agar partikel hidup
+                        target.x += sin(uTime + target.y) * 0.05;
+                        
+                        vec3 pos = target + (target * uExpand * 2.0);
+                        gl_PointSize = 6.0 + (sin(uTime * 2.0 + target.x) * 2.0);
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D uTexture;
+                    void main() {
+                        gl_FragColor = texture2D(uTexture, gl_PointCoord);
+                    }
+                `,
+                transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        function setupHandTracking() {
+            const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7 });
+            hands.onResults((res) => {
+                if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
+                    const lm = res.multiHandLandmarks[0];
+                    targetRotationY += (lm[9].x - lastHandX) * 4;
+                    lastHandX = lm[9].x;
+
+                    // LOGIKA GESTUR BARU
+                    const indexUp = lm[8].y < lm[6].y;
+                    const middleUp = lm[12].y < lm[10].y;
+                    const ringUp = lm[16].y < lm[14].y;
+                    const pinkyUp = lm[20].y < lm[18].y;
+
+                    // 1. 🖕 Jari Tengah (Hati) -> Tengah naik, yang lain turun
+                    if(middleUp && !indexUp && !ringUp && !pinkyUp) currentShape = 'heart';
+                    // 2. ✌️ Dua Jari (Text) -> Telunjuk & Tengah naik
+                    else if(indexUp && middleUp && !ringUp) currentShape = 'text';
+                    else currentShape = 'sphere';
+
+                    const dExpand = Math.hypot(lm[8].x - lm[0].x, lm[8].y - lm[0].y);
+                    handOpenness = THREE.MathUtils.lerp(handOpenness, Math.max(0, (dExpand - 0.3) * 3), 0.1);
+                }
+            });
+            const cam = new Camera(videoElement, { onFrame: async () => { await hands.send({ image: videoElement }); }, width: 640, height: 480 });
+            cam.start();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if(material) {
+                material.uniforms.uTime.value += 0.05;
+                material.uniforms.uExpand.value = handOpenness;
+                let tType = currentShape === 'sphere' ? 0 : (currentShape === 'heart' ? 1 : 2);
+                material.uniforms.uShapeType.value = THREE.MathUtils.lerp(material.uniforms.uShapeType.value, tType, 0.1);
+                particles.rotation.y = THREE.MathUtils.lerp(particles.rotation.y, targetRotationY, 0.05);
+                particles.rotation.y += 0.003;
+            }
+            renderer.render(scene, camera);
+        }
+
+        init();
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
+```
